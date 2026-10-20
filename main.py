@@ -1,9 +1,16 @@
+from pathlib import Path
+
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 
 pd.set_option('display.max_rows', None)
 pd.set_option('display.width', None)
+
+# Folder paths that work no matter where you run the script from
+BASE_DIR = Path(__file__).parent
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)   # creates the folder if it's missing
 
 
 def get_ratios(ticker_symbol):
@@ -41,15 +48,20 @@ all_results = pd.concat(results_list)
 print("\nALL COMPANIES RATIO TABLE")
 print(all_results)
 
-# --- Export to Excel ---
-with pd.ExcelWriter("data/financial_analysis.xlsx", engine="openpyxl") as writer:
+# --- Raw Excel export (separate name so your formatted file is NOT overwritten) ---
+with pd.ExcelWriter(DATA_DIR / "financial_analysis_raw.xlsx", engine="openpyxl") as writer:
     all_results.to_excel(writer, sheet_name="All Companies")
-    for t in tickers:
-        subset = all_results[all_results["Ticker"] == t]
-        subset.to_excel(writer, sheet_name=t)
+    for t in all_results["Ticker"].unique():
+        all_results[all_results["Ticker"] == t].to_excel(writer, sheet_name=t)
+
+# --- Clean CSV for Power BI (written BEFORE the chart, so plt.show() can't block it) ---
+clean = all_results.rename_axis("Period End").reset_index()
+clean["Fiscal Year"] = pd.to_datetime(clean["Period End"]).dt.year
+clean = clean.dropna(subset=["Current Ratio"])   # drops the empty rows
+clean.to_csv(DATA_DIR / "ratios_clean.csv", index=False)
 
 # --- Chart: Net Profit Margin trend across companies ---
-for t in tickers:
+for t in all_results["Ticker"].unique():   # skips JPM, so no empty legend entry
     subset = all_results[all_results["Ticker"] == t].sort_index()
     plt.plot(subset.index, subset["Net Profit Margin"], marker="o", label=t)
 
@@ -57,5 +69,7 @@ plt.title("Net Profit Margin Trend by Company")
 plt.xlabel("Year")
 plt.ylabel("Net Profit Margin")
 plt.legend()
-plt.savefig("data/profit_margin_trend.png")
+plt.savefig(DATA_DIR / "profit_margin_trend.png")
 plt.show()
+
+
